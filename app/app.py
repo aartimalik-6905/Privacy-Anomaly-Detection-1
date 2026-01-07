@@ -9,7 +9,6 @@ import os
 sys.path.append(os.path.abspath("."))
 
 
-from src.extract_skeleton import extract_skeleton
 
 # --------------------------------------------------
 # PAGE CONFIG
