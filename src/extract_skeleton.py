@@ -19,8 +19,13 @@ def extract_skeleton(video_path, output_path):
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     # Initialize MediaPipe Pose
-    mp_pose = mp.solutions.pose
-    pose = mp_pose.Pose(static_image_mode=False)
+    pose = mp.solutions.pose.Pose(
+    static_image_mode=False,
+    model_complexity=1,
+    enable_segmentation=False,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
+)
 
     cap = cv2.VideoCapture(video_path)
 
