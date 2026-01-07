@@ -3,78 +3,79 @@ import mediapipe as mp
 import pandas as pd
 import os
 
-from human_detector import count_human_frames
+from src.human_detector import count_human_frames
 
-# ==============================
-# CONFIG
-# ==============================
-VIDEO_PATH = os.environ.get("VIDEO_PATH", "data/raw_videos/test.mp4")
-OUTPUT_PATH = "data/skeleton_csv/test.csv"
 
-MIN_POSE_FRAMES = 10        # works for babies
-HOG_MIN_FRAMES = 10         # blocks animals
-FRAME_BUFFER_SIZE = 60
+def extract_skeleton(video_path, output_path):
+    """
+    Extracts MediaPipe pose skeletons from a video.
+    Raises RuntimeError("NO_HUMAN_DETECTED") if no valid human is found.
+    """
 
-os.makedirs("data/skeleton_csv", exist_ok=True)
+    MIN_POSE_FRAMES = 10        # baby-safe
+    HOG_MIN_FRAMES = 10         # animal-safe
+    FRAME_BUFFER_SIZE = 60
 
-# ==============================
-# INITIALIZE
-# ==============================
-mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(static_image_mode=False)
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-cap = cv2.VideoCapture(VIDEO_PATH)
+    # Initialize MediaPipe Pose
+    mp_pose = mp.solutions.pose
+    pose = mp_pose.Pose(static_image_mode=False)
 
-rows = []
-frames_buffer = []
-pose_frames = 0
-frame_count = 0
+    cap = cv2.VideoCapture(video_path)
 
-# ==============================
-# MAIN LOOP
-# ==============================
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
+    rows = []
+    frames_buffer = []
+    pose_frames = 0
+    frame_count = 0
 
-    frame_count += 1
+    # ------------------------------
+    # MAIN LOOP
+    # ------------------------------
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-    if len(frames_buffer) < FRAME_BUFFER_SIZE:
-        frames_buffer.append(frame)
+        frame_count += 1
 
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    result = pose.process(rgb)
+        if len(frames_buffer) < FRAME_BUFFER_SIZE:
+            frames_buffer.append(frame)
 
-    if result.pose_landmarks:
-        pose_frames += 1
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = pose.process(rgb)
 
-        row = []
-        for lm in result.pose_landmarks.landmark:
-            row.extend([lm.x, lm.y, lm.z])
-        rows.append(row)
+        if result.pose_landmarks:
+            pose_frames += 1
 
-cap.release()
+            row = []
+            for lm in result.pose_landmarks.landmark:
+                row.extend([lm.x, lm.y, lm.z])
+            rows.append(row)
 
-print("Frames read:", frame_count)
-print("Pose frames:", pose_frames)
+    cap.release()
 
-# ==============================
-# HARD HUMAN GATES
-# ==============================
+    # ------------------------------
+    # HARD HUMAN GATES
+    # ------------------------------
+    if pose_frames < MIN_POSE_FRAMES:
+        raise RuntimeError("NO_HUMAN_DETECTED")
 
-# Gate 1: Pose must exist over time (baby-safe)
-if pose_frames < MIN_POSE_FRAMES:
-    raise RuntimeError("NO_HUMAN_DETECTED")
+    if not count_human_frames(frames_buffer, min_hits=HOG_MIN_FRAMES):
+        raise RuntimeError("NO_HUMAN_DETECTED")
 
-# Gate 2: Independent human detector (animal-safe)
-if not count_human_frames(frames_buffer, min_hits=HOG_MIN_FRAMES):
-    raise RuntimeError("NO_HUMAN_DETECTED")
+    # ------------------------------
+    # SAVE CSV
+    # ------------------------------
+    df = pd.DataFrame(rows)
+    df.to_csv(output_path, index=False)
 
-# ==============================
-# SAVE
-# ==============================
-df = pd.DataFrame(rows)
-df.to_csv(OUTPUT_PATH, index=False)
+    return output_path
 
-print("Skeleton CSV created:", OUTPUT_PATH)
+
+# Allows standalone testing (optional)
+if __name__ == "__main__":
+    extract_skeleton(
+        "data/raw_videos/normal_vdo.mp4",
+        "data/skeleton_csv/test.csv"
+    )
