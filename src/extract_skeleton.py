@@ -11,7 +11,16 @@ def extract_skeleton(video_path, output_path):
     Extracts MediaPipe pose skeletons from a video.
     Raises RuntimeError("NO_HUMAN_DETECTED") if no valid human is found.
     """
-
+    mp_pose = mp.solutions.pose
+    with mp_pose.Pose(
+        static_image_mode=False,
+        model_complexity=1,
+        enable_segmentation=False,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5
+    ) as pose:
+        
+        cap = cv2.VideoCapture(video_path)
     MIN_POSE_FRAMES = 10        # baby-safe
     HOG_MIN_FRAMES = 10         # animal-safe
     FRAME_BUFFER_SIZE = 60
