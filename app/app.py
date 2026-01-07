@@ -12,29 +12,42 @@ st.set_page_config(
 )
 
 st.title("🛡️ Privacy-Preserving Video Anomaly Detection")
-st.write("Privacy-first human activity understanding using motion patterns, not identity.")
+st.markdown(
+    """
+<div style="
+    padding:16px;
+    border-radius:10px;
+    border:1px solid rgba(255,255,255,0.15);
+    background-color: rgba(240,242,246,0.04);
+">
+<h4>📹 How to Use This App</h4>
+<ul>
+<li>Upload a short video <b>containing people</b> (walking, talking, running, or fighting).</li>
+<li>The system analyzes <b>only body movement patterns</b>, not faces or identity.</li>
+<li>One video at a time is processed.</li>
+</ul>
+<b>Possible outcomes:</b>
+<ul>
+<li>✅ Normal Activity</li>
+<li>🚨 Violent / Aggressive Behavior</li>
+<li>ℹ️ No human detected</li>
+<li>ℹ️ Insufficient data</li>
+</ul>
+</div>
+""",
+    unsafe_allow_html=True
+)
+
 
 SKELETON_PATH = "data/skeleton_csv/test.csv"
 EXTRACT_SCRIPT = "src/extract_skeleton.py"
 
 violence_model = joblib.load("models/violence_classifier.pkl")
 
-st.markdown(
-    """
-    ### 📹 How to Use This App
-    - Upload a **short video containing people** (walking, talking, running, or fighting).
-    - The system analyzes **only body movement patterns**, not faces or identity.
-    - Possible outcomes:
-        - ✅ **Normal Activity**
-        - 🚨 **Violent / Aggressive Behavior**
-        - ℹ️ **No human detected**
-        - ℹ️ **Insufficient data**
-    """
-)
 
 def run_app():
     uploaded_video = st.file_uploader(
-        "Upload a video",
+        "Upload a video:",
         type=["mp4", "avi"],
         help="Upload any video. Faces, clothing, and identity are never analyzed."
     )
