@@ -11,30 +11,21 @@ def extract_skeleton(video_path, output_path):
     Extracts MediaPipe pose skeletons from a video.
     Raises RuntimeError("NO_HUMAN_DETECTED") if no valid human is found.
     """
-    mp_pose = mp.solutions.pose
-    with mp_pose.Pose(
-        static_image_mode=False,
-        model_complexity=1,
-        enable_segmentation=False,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5
-    ) as pose:
-        
-        cap = cv2.VideoCapture(video_path)
+
     MIN_POSE_FRAMES = 10        # baby-safe
     HOG_MIN_FRAMES = 10         # animal-safe
     FRAME_BUFFER_SIZE = 60
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    # Initialize MediaPipe Pose
+    # Initialize MediaPipe Pose (CLOUD-SAFE)
     pose = mp.solutions.pose.Pose(
-    static_image_mode=False,
-    model_complexity=1,
-    enable_segmentation=False,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
-)
+        static_image_mode=False,
+        model_complexity=1,
+        enable_segmentation=False,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5
+    )
 
     cap = cv2.VideoCapture(video_path)
 
@@ -68,6 +59,7 @@ def extract_skeleton(video_path, output_path):
             rows.append(row)
 
     cap.release()
+    pose.close()
 
     # ------------------------------
     # HARD HUMAN GATES
@@ -87,7 +79,7 @@ def extract_skeleton(video_path, output_path):
     return output_path
 
 
-# Allows standalone testing (optional)
+# Optional local test
 if __name__ == "__main__":
     extract_skeleton(
         "data/raw_videos/normal_vdo.mp4",
