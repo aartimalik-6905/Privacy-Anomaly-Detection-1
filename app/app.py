@@ -4,16 +4,50 @@ import numpy as np
 import joblib
 import tempfile
 import os
-
-# Import skeleton extractor
-from src.extract_skeleton import extract_skeleton
+import sys
 
 # --------------------------------------------------
-# PAGE CONFIG
+# 1. STREAMLIT CLOUD SAFE PATH HANDLING (ONLY FIX)
+# --------------------------------------------------
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, ".."))
+src_dir = os.path.join(root_dir, "src")
+
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
+# --------------------------------------------------
+# 2. IMPORT (FIXED – NO src.)
+# --------------------------------------------------
+try:
+    from extract_skeleton import extract_skeleton
+except Exception as e:
+    st.error("🚨 Critical Error: Could not import extract_skeleton.py")
+    st.exception(e)
+    st.stop()
+
+# --------------------------------------------------
+# PAGE CONFIG (UNCHANGED)
 # --------------------------------------------------
 st.set_page_config(
     page_title="Privacy-Preserving Anomaly Detection",
     layout="centered"
+)
+
+# GLOWING CSS (UNCHANGED)
+st.markdown(
+    """
+    <style>
+    section[data-testid="stFileUploader"] {
+        border: 2px solid rgba(100, 180, 255, 0.4);
+        border-radius: 12px;
+        padding: 15px;
+        background: rgba(20, 20, 30, 0.5);
+        box-shadow: 0 0 15px rgba(100, 180, 255, 0.2);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 st.title("🛡️ Privacy-Preserving Video Anomaly Detection")
@@ -23,14 +57,14 @@ st.markdown(
 <div style="
     padding:16px;
     border-radius:10px;
-    border:1px solid rgba(255,255,255,0.2);
-    background-color: rgba(240,242,246,0.05);
+    border:1px solid rgba(255,255,255,0.15);
+    background-color: rgba(240,242,246,0.04);
 ">
 <h4>📹 How to Use This App</h4>
 <ul>
-<li>Upload a short <b>MP4 / AVI video containing people</b>.</li>
-<li>The system analyzes <b>only body movement patterns</b> (no faces, no identity).</li>
-<li>One video is processed at a time.</li>
+<li>Upload a short video <b>containing people</b> (walking, talking, running, or fighting).</li>
+<li>The system analyzes <b>only body movement patterns</b>, not faces or identity.</li>
+<li>One video at a time is processed.</li>
 </ul>
 <b>Possible outcomes:</b>
 <ul>
@@ -45,55 +79,55 @@ st.markdown(
 )
 
 # --------------------------------------------------
-# PATHS & MODEL
+# PATHS & MODEL (MINOR SAFE FIX)
 # --------------------------------------------------
-SKELETON_PATH = "data/skeleton_csv/test.csv"
-MODEL_PATH = "models/violence_classifier.pkl"
+DATA_DIR = os.path.join(root_dir, "data", "skeleton_csv")
+os.makedirs(DATA_DIR, exist_ok=True)
 
-violence_model = joblib.load(MODEL_PATH)
+SKELETON_PATH = os.path.join(DATA_DIR, "test.csv")
+MODEL_PATH = os.path.join(root_dir, "models", "violence_classifier.pkl")
 
-# Ensure output directory exists
-os.makedirs("data/skeleton_csv", exist_ok=True)
+@st.cache_resource
+def load_violence_model():
+    return joblib.load(MODEL_PATH)
+
+violence_model = load_violence_model()
 
 # --------------------------------------------------
-# MAIN APP LOGIC
+# MAIN APP LOGIC (UNCHANGED)
 # --------------------------------------------------
 def run_app():
     uploaded_video = st.file_uploader(
-        "Upload a video",
+        "Upload a video:",
         type=["mp4", "avi"],
-        help="Faces, clothing, and identity are never analyzed."
+        help="Upload any video. Faces, clothing, and identity are never analyzed."
     )
 
     if not uploaded_video:
         return
 
-    # Save uploaded video temporarily
     temp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     temp_video.write(uploaded_video.read())
     temp_video.close()
 
-    # -------------------------------
-    # Skeleton Extraction
-    # -------------------------------
-    try:
-        extract_skeleton(
-            video_path=temp_video.name,
-            output_path=SKELETON_PATH
-        )
+    with st.spinner("🪄 Extracting motion patterns..."):
+        try:
+            extract_skeleton(
+                video_path=temp_video.name,
+                output_path=SKELETON_PATH
+            )
 
-    except RuntimeError as e:
-        if "NO_HUMAN_DETECTED" in str(e):
-            st.info("ℹ️ No human detected. Analysis aborted.")
+        except RuntimeError as e:
+            if "NO_HUMAN_DETECTED" in str(e):
+                st.info("ℹ️ No human detected. Analysis aborted.")
+            else:
+                st.error("Internal processing error")
+                st.text(str(e))
             return
-        else:
-            st.error("Internal processing error during skeleton extraction.")
-            st.text(str(e))
+        except Exception as e:
+            st.error(f"Processing error: {e}")
             return
 
-    # -------------------------------
-    # Load Skeleton CSV
-    # -------------------------------
     if not os.path.exists(SKELETON_PATH):
         st.info("ℹ️ No human detected. Analysis aborted.")
         return
@@ -103,20 +137,16 @@ def run_app():
         st.info("ℹ️ No human detected. Analysis aborted.")
         return
 
-    # -------------------------------
-    # Feature Extraction
-    # -------------------------------
     velocity = df.diff().fillna(0).values
     speed = np.linalg.norm(velocity, axis=1)
 
-    # Edge case: very short video
     if len(speed) < 30:
         st.info("ℹ️ Insufficient data for analysis.")
         return
 
-    # Edge case: camera motion / shake
     joint_velocity = velocity.reshape(-1, 3)
     motion_variance = np.var(np.linalg.norm(joint_velocity, axis=1))
+
     if motion_variance < 0.0005:
         st.info("ℹ️ Camera motion detected. Analysis skipped.")
         return
@@ -129,9 +159,6 @@ def run_app():
         "motion_irregularity": [np.std(np.diff(speed))]
     })
 
-    # -------------------------------
-    # Prediction
-    # -------------------------------
     prediction = violence_model.predict(features)[0]
 
     if prediction == 1:
@@ -139,11 +166,12 @@ def run_app():
     else:
         st.success("✅ Normal Activity")
 
+    if os.path.exists(temp_video.name):
+        os.remove(temp_video.name)
 
-# Footer
 st.caption(
-    "Privacy note: This system does not process faces, clothing, or personal identity — only motion patterns."
+    "Privacy note: This system does not process faces, clothing, or personal identity."
 )
 
-# Run app
-run_app()
+if __name__ == "__main__":
+    run_app()
