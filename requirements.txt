@@ -1,6 +1,7 @@
-mediapipe>=0.10.30
+streamlit
 opencv-python-headless
-pandas
+mediapipe
 numpy
-joblib
+pandas
 scikit-learn
+joblib
