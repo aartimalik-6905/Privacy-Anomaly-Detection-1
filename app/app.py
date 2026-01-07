@@ -3,15 +3,20 @@ import pandas as pd
 import numpy as np
 import joblib
 import tempfile
-import subprocess
 import os
 
+from src.extract_skeleton import extract_skeleton
+
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
 st.set_page_config(
     page_title="Privacy-Preserving Anomaly Detection",
     layout="centered"
 )
 
 st.title("🛡️ Privacy-Preserving Video Anomaly Detection")
+
 st.markdown(
     """
 <div style="
@@ -38,13 +43,15 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-
+# --------------------------------------------------
+# PATHS & MODEL
+# --------------------------------------------------
 SKELETON_PATH = "data/skeleton_csv/test.csv"
-EXTRACT_SCRIPT = "src/extract_skeleton.py"
-
 violence_model = joblib.load("models/violence_classifier.pkl")
 
-
+# --------------------------------------------------
+# MAIN APP LOGIC
+# --------------------------------------------------
 def run_app():
     uploaded_video = st.file_uploader(
         "Upload a video:",
@@ -55,30 +62,35 @@ def run_app():
     if not uploaded_video:
         return
 
+    # Save uploaded video
     temp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     temp_video.write(uploaded_video.read())
     temp_video.close()
 
-    os.environ["VIDEO_PATH"] = temp_video.name
-
-    # ✅ REQUIRED FOR CLOUD
+    # Ensure output directory exists (Cloud-safe)
     os.makedirs("data/skeleton_csv", exist_ok=True)
 
+    # -------------------------------
+    # Skeleton extraction
+    # -------------------------------
     try:
-        subprocess.run(
-            ["python", EXTRACT_SCRIPT],
-            check=True,
-            capture_output=True,
-            text=True
+        extract_skeleton(
+            video_path=temp_video.name,
+            output_path=SKELETON_PATH
         )
-    except subprocess.CalledProcessError as e:
-        if "NO_HUMAN_DETECTED" in e.stderr or "NO_HUMAN_DETECTED" in e.stdout:
+
+    except RuntimeError as e:
+        if "NO_HUMAN_DETECTED" in str(e):
             st.info("ℹ️ No human detected. Analysis aborted.")
             return
-        st.error("Internal processing error")
-        st.text(e.stderr)
-        return
+        else:
+            st.error("Internal processing error")
+            st.text(str(e))
+            return
 
+    # -------------------------------
+    # Load skeleton CSV
+    # -------------------------------
     if not os.path.exists(SKELETON_PATH):
         st.info("ℹ️ No human detected. Analysis aborted.")
         return
@@ -88,13 +100,18 @@ def run_app():
         st.info("ℹ️ No human detected. Analysis aborted.")
         return
 
+    # -------------------------------
+    # Feature computation
+    # -------------------------------
     velocity = df.diff().fillna(0).values
     speed = np.linalg.norm(velocity, axis=1)
 
+    # Short video guard
     if len(speed) < 30:
         st.info("ℹ️ Insufficient data for analysis.")
         return
 
+    # Camera motion guard
     joint_velocity = velocity.reshape(-1, 3)
     motion_variance = np.var(np.linalg.norm(joint_velocity, axis=1))
     if motion_variance < 0.0005:
@@ -109,6 +126,9 @@ def run_app():
         "motion_irregularity": [np.std(np.diff(speed))]
     })
 
+    # -------------------------------
+    # Prediction
+    # -------------------------------
     prediction = violence_model.predict(features)[0]
 
     if prediction == 1:
@@ -116,8 +136,11 @@ def run_app():
     else:
         st.success("✅ Normal Activity")
 
+
+# Footer
 st.caption(
     "Privacy note: This system does not process faces, clothing, or personal identity."
 )
 
+# Run app
 run_app()
