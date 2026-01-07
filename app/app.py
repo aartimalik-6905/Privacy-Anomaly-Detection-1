@@ -5,10 +5,28 @@ import joblib
 import tempfile
 import os
 import sys
-import os
-sys.path.append(os.path.abspath("."))
 
+# --------------------------------------------------
+# 1. ROBUST PATH HANDLING (FIXES IMPORT ERRORS)
+# --------------------------------------------------
+# This ensures that the 'src' folder is visible regardless of where the script starts
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, '..'))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
+# --------------------------------------------------
+# 2. EXPLICIT FUNCTION IMPORT
+# --------------------------------------------------
+try:
+    from src.extract_skeleton import extract_skeleton
+except (ImportError, ModuleNotFoundError):
+    try:
+        # Fallback for alternative directory structures
+        from extract_skeleton import extract_skeleton
+    except ImportError:
+        st.error("🚨 Critical Error: Could not find 'extract_skeleton.py'. Please check your project structure.")
+        st.stop()
 
 # --------------------------------------------------
 # PAGE CONFIG
@@ -16,6 +34,22 @@ sys.path.append(os.path.abspath("."))
 st.set_page_config(
     page_title="Privacy-Preserving Anomaly Detection",
     layout="centered"
+)
+
+# GLOWING CSS (AESTHETIC ONLY - NO LOGIC CHANGES)
+st.markdown(
+    """
+    <style>
+    section[data-testid="stFileUploader"] {
+        border: 2px solid rgba(100, 180, 255, 0.4);
+        border-radius: 12px;
+        padding: 15px;
+        background: rgba(20, 20, 30, 0.5);
+        box-shadow: 0 0 15px rgba(100, 180, 255, 0.2);
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 st.title("🛡️ Privacy-Preserving Video Anomaly Detection")
@@ -50,7 +84,13 @@ st.markdown(
 # PATHS & MODEL
 # --------------------------------------------------
 SKELETON_PATH = "data/skeleton_csv/test.csv"
-violence_model = joblib.load("models/violence_classifier.pkl")
+
+# Cache the model to prevent reloading on every run
+@st.cache_resource
+def load_violence_model():
+    return joblib.load("models/violence_classifier.pkl")
+
+violence_model = load_violence_model()
 
 # --------------------------------------------------
 # MAIN APP LOGIC
@@ -65,7 +105,7 @@ def run_app():
     if not uploaded_video:
         return
 
-    # Save uploaded video
+    # Save uploaded video to temp file
     temp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     temp_video.write(uploaded_video.read())
     temp_video.close()
@@ -76,19 +116,22 @@ def run_app():
     # -------------------------------
     # Skeleton extraction
     # -------------------------------
-    try:
-        extract_skeleton(
-            video_path=temp_video.name,
-            output_path=SKELETON_PATH
-        )
+    with st.spinner("🪄 Extracting motion patterns..."):
+        try:
+            extract_skeleton(
+                video_path=temp_video.name,
+                output_path=SKELETON_PATH
+            )
 
-    except RuntimeError as e:
-        if "NO_HUMAN_DETECTED" in str(e):
-            st.info("ℹ️ No human detected. Analysis aborted.")
+        except RuntimeError as e:
+            if "NO_HUMAN_DETECTED" in str(e):
+                st.info("ℹ️ No human detected. Analysis aborted.")
+            else:
+                st.error("Internal processing error")
+                st.text(str(e))
             return
-        else:
-            st.error("Internal processing error")
-            st.text(str(e))
+        except Exception as e:
+            st.error(f"Processing error: {e}")
             return
 
     # -------------------------------
@@ -115,8 +158,10 @@ def run_app():
         return
 
     # Camera motion guard
+    # Reshape to (-1, 3) because each point has x, y, z
     joint_velocity = velocity.reshape(-1, 3)
     motion_variance = np.var(np.linalg.norm(joint_velocity, axis=1))
+    
     if motion_variance < 0.0005:
         st.info("ℹ️ Camera motion detected. Analysis skipped.")
         return
@@ -139,6 +184,10 @@ def run_app():
     else:
         st.success("✅ Normal Activity")
 
+    # Clean up temp file
+    if os.path.exists(temp_video.name):
+        os.remove(temp_video.name)
+
 
 # Footer
 st.caption(
@@ -146,4 +195,5 @@ st.caption(
 )
 
 # Run app
-run_app()
+if __name__ == "__main__":
+    run_app()
