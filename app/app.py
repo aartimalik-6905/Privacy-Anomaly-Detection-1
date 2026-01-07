@@ -4,6 +4,10 @@ import numpy as np
 import joblib
 import tempfile
 import os
+import sys
+import os
+sys.path.append(os.path.abspath("."))
+
 
 from src.extract_skeleton import extract_skeleton
 
