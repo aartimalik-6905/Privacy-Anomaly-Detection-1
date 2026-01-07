@@ -3,7 +3,7 @@ import mediapipe as mp
 import pandas as pd
 import os
 
-from src.human_detector import count_human_frames
+from human_detector import count_human_frames
 
 
 def extract_skeleton(video_path, output_path):
